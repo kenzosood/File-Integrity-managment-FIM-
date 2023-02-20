@@ -1,0 +1,123 @@
+﻿# CREATED A FUNCTION THAT CALCULATES THE HASHES OF THE CONTENT OF FOLDER GIVEN
+Function Calculate-File-Hash($filepath) {
+   
+    #COLLECTING THE HASHES OF ALL THJE FILE WITH ALGORITHM OF "SHA 512" 
+    $filehash = Get-FileHash -Path $filepath -Algorithm SHA512
+    return $filehash
+}
+
+# CREATED A FUNCTION TO DELETE THE EXISTING HASHES TO RUN PROPERLY AFTER CHANGES MADE BY THE USER
+Function Erase-Baseline-If-Already-Exists() {
+   
+    #CHECKING IF THE HASHES FILE i.e. baseline.txt EXIST OR NOT
+    $baselineExists = Test-Path -Path .\baseline.txt
+   
+    #DELETING THE HASH FILE IF IT EXISTS
+    if ($baselineExists) {
+        # Delete it
+        Remove-Item -Path .\baseline.txt
+    }
+}
+
+
+#PRINTING COMMANDS
+Write-Host ""
+Write-Host "What would you like to do?"
+Write-Host ""
+Write-Host "    A) Collect new Baseline?"
+Write-Host "    B) Begin monitoring files with saved Baseline?"
+Write-Host ""
+
+#TAKING INPUT FROM THE USER 
+$response = Read-Host -Prompt "Please enter 'A' or 'B'"
+Write-Host ""
+
+# GIVING LOGIC TO THE PROGRAM ACCORDING TO THE INPUT
+
+# IF USER INPUTS "A" 
+if ($response -eq "A".ToUpper()) {
+   
+    # Delete baseline.txt if it already exists
+    
+    Erase-Baseline-If-Already-Exists
+
+    # Calculate Hash from the target files and store in baseline.txt
+    # Collect all files in the target folder
+
+    #FILE-PATH                      ↓
+    $files = Get-ChildItem -Path .\Files
+
+   
+    # For each file, calculate the hash, and write to baseline.txt
+    foreach ($f in $files) {
+        
+        #CALLING THE FUNCTION CREATED TO CALCULATE THE HASHES OF THE FILE
+        $hash = Calculate-File-Hash $f.FullName
+        
+        #FORMAT TO SAVE THE HASHES IN THE "baseline.txt" 
+        "$($hash.Path) | $($hash.Hash)" | Out-File -FilePath .\baseline.txt -Append
+    }
+    
+    
+}
+
+# GIVING THE LOGIC TO BE FOLLOWED IF USER INPUTS "B"
+elseif ($response -eq "B".ToUpper()) {
+    
+    $fileHashDictionary = @{}
+
+    # Load file|hash from baseline.txt and store them in a dictionary
+    $filePathsAndHashes = Get-Content -Path .\baseline.txt
+    
+    foreach ($f in $filePathsAndHashes) {
+         $fileHashDictionary.add($f.Split("|")[0],$f.Split("|")[1])
+    }
+
+    # Begin (continuously) monitoring files with saved Baseline
+    while ($true) {
+        Start-Sleep -Seconds 1
+        
+        #FILE-PATH                      ↓
+        $files = Get-ChildItem -Path .\Files
+
+        # For each file, calculate the hash, and write to baseline.txt
+        foreach ($f in $files) {
+            $hash = Calculate-File-Hash $f.FullName
+            #"$($hash.Path)|$($hash.Hash)" | Out-File -FilePath .\baseline.txt -Append
+
+            # Notify if a new file has been created
+            if ($fileHashDictionary[$hash.Path] -eq $null) {
+
+                # A new file has been created!
+
+            #COLOUR                                                 ↓
+                Write-Host "$($hash.Path) has been created!" -ForegroundColor Green
+            }
+            else {
+
+                # Notify if a new file has been changed
+                if ($fileHashDictionary[$hash.Path] -eq $hash.Hash) {
+                    # The file has not changed
+                }
+                else {
+                   
+                    # File file has been compromised!, notify the user
+
+                    #COLOUR                                                 ↓
+                    Write-Host "$($hash.Path) has changed!!!" -ForegroundColor Yellow
+                }
+            }
+        }
+
+        foreach ($key in $fileHashDictionary.Keys) {
+            $baselineFileStillExists = Test-Path -Path $key
+            if (-Not $baselineFileStillExists) {
+               
+                # One of the baseline files must have been deleted, notify the user
+
+                #COLOUR                                                 ↓               ↓
+                Write-Host "$($key) has been deleted!" -ForegroundColor DarkRed -BackgroundColor Gray
+            }
+        }
+    }
+}
